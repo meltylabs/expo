@@ -30,6 +30,16 @@ struct DevServer: Hashable {
   }
 }
 
+struct ConductorRemoteAppIndex: Decodable {
+  let apps: [ConductorRemoteApp]
+}
+
+struct ConductorRemoteApp: Decodable {
+  let workspaceName: String
+  let status: String?
+  let metroPublicUrl: String?
+}
+
 struct BuildInfo {
   let appId: String
   let runtimeVersion: String

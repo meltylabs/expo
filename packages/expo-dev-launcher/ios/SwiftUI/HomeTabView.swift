@@ -67,6 +67,20 @@ struct HomeTabView: View {
     .sheet(isPresented: $showingInfoDialog) {
       DevServerInfoModal()
     }
+    .sheet(isPresented: $viewModel.showingConductorRemoteBuilds) {
+      if let url = viewModel.conductorRemoteBuildsURL {
+        ConductorRemoteBuildsView(
+          url: url,
+          onClose: {
+            viewModel.finishConductorRemoteBuildsAuthentication()
+          },
+          onOpenApp: { appURL in
+            viewModel.showingConductorRemoteBuilds = false
+            viewModel.openApp(url: appURL)
+          }
+        )
+      }
+    }
   }
 
   private var crashReportBanner: some View {

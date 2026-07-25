@@ -12,6 +12,7 @@ private let sessionKey = "expo-session-secret"
 private let DEV_LAUNCHER_DEFAULT_SCHEME = "expo-dev-launcher"
 private let BONJOUR_TYPE = "_expo._tcp"
 private let networkPermissionGrantedKey = "expo.devlauncher.hasGrantedNetworkPermission"
+private let conductorRemoteAppIndexURLKey = "ConductorRemoteIOSAppIndexURL"
 
 enum LocalNetworkPermissionStatus: Equatable, Sendable {
   case unknown
@@ -62,12 +63,15 @@ class DevLauncherViewModel: ObservableObject {
   @Published var isLoadingServer: Bool = false
   @Published var isLoadingLocalBundle: Bool = false
   @Published var permissionStatus: LocalNetworkPermissionStatus = .unknown
+  @Published var showingConductorRemoteBuilds = false
 
   @Published var devServers: [DevServer] = []
 
   private var browser: NWBrowser?
   private var pingTask: Task<Void, Never>?
   private var periodicRefreshTask: Task<Void, Never>?
+  private var localDevServers: [DevServer] = []
+  private var remoteDevServers: [DevServer] = []
   private var pendingEmptyVerification = false
   private static let refreshInterval: UInt64 = 10_000_000_000
 
@@ -105,7 +109,7 @@ class DevLauncherViewModel: ObservableObject {
   }
 
   private func updateDevServers(_ servers: [DevServer]) {
-    if servers.isEmpty && !devServers.isEmpty && !pendingEmptyVerification {
+    if servers.isEmpty && !localDevServers.isEmpty && !pendingEmptyVerification {
       pendingEmptyVerification = true
       stopServerDiscovery()
       startServerDiscovery()
@@ -115,7 +119,17 @@ class DevLauncherViewModel: ObservableObject {
     if !servers.isEmpty {
       markNetworkPermissionGranted()
     }
-    devServers = servers.sorted(by: <)
+    localDevServers = servers.sorted(by: <)
+    publishDevServers()
+  }
+
+  private func updateRemoteDevServers(_ servers: [DevServer]) {
+    remoteDevServers = servers.sorted(by: <)
+    publishDevServers()
+  }
+
+  private func publishDevServers() {
+    devServers = Array(Set(localDevServers + remoteDevServers)).sorted(by: <)
   }
 
   private func extractPort(from url: String) -> String? {
@@ -190,6 +204,33 @@ class DevLauncherViewModel: ObservableObject {
       })
   }
 
+  var conductorRemoteBuildsURL: URL? {
+    guard let indexURL = conductorRemoteAppIndexURL() else {
+      return nil
+    }
+
+    if indexURL.lastPathComponent == "apps.json" {
+      return indexURL.deletingLastPathComponent()
+    }
+
+    return indexURL
+  }
+
+  func showConductorRemoteBuilds() {
+    guard conductorRemoteBuildsURL != nil else {
+      return
+    }
+
+    showingConductorRemoteBuilds = true
+  }
+
+  func finishConductorRemoteBuildsAuthentication() {
+    showingConductorRemoteBuilds = false
+    Task { [weak self] in
+      await self?.refreshRemoteDevServers()
+    }
+  }
+
   func clearRecentlyOpenedApps() {
     EXDevLauncherController.sharedInstance().clearRecentlyOpenedApps()
     self.recentlyOpenedApps = []
@@ -223,9 +264,13 @@ class DevLauncherViewModel: ObservableObject {
     stopServerDiscovery()
     startDevServerBrowser()
     startPeriodicRefresh()
+    Task { [weak self] in
+      await self?.refreshRemoteDevServers()
+    }
   }
 
   func refreshDevServers() async {
+    await refreshRemoteDevServers()
     await restartBrowser()
   }
 
@@ -265,6 +310,7 @@ class DevLauncherViewModel: ObservableObject {
   }
 
   private func refreshIfNeeded() async {
+    await refreshRemoteDevServers()
     guard let browser else {
       return
     }
@@ -450,6 +496,54 @@ class DevLauncherViewModel: ObservableObject {
     } catch {}
 
     return nil
+  }
+
+  private func conductorRemoteAppIndexURL() -> URL? {
+    guard let value = Bundle.main.object(forInfoDictionaryKey: conductorRemoteAppIndexURLKey) as? String,
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+
+    return URL(string: value)
+  }
+
+  private func refreshRemoteDevServers() async {
+    guard let url = conductorRemoteAppIndexURL() else {
+      updateRemoteDevServers([])
+      return
+    }
+
+    do {
+      var request = URLRequest(url: url)
+      request.cachePolicy = .reloadIgnoringLocalCacheData
+      request.timeoutInterval = 5
+
+      let (data, response) = try await URLSession.shared.data(for: request)
+      guard let httpResponse = response as? HTTPURLResponse,
+            (200..<300).contains(httpResponse.statusCode) else {
+        updateRemoteDevServers([])
+        return
+      }
+
+      let appIndex = try JSONDecoder().decode(ConductorRemoteAppIndex.self, from: data)
+      let servers = appIndex.apps.compactMap { app -> DevServer? in
+        guard app.status == nil || app.status == "running",
+              let publicUrl = app.metroPublicUrl,
+              !publicUrl.isEmpty else {
+          return nil
+        }
+
+        return DevServer(
+          url: publicUrl,
+          description: app.workspaceName,
+          source: "conductor-remote"
+        )
+      }
+
+      updateRemoteDevServers(servers)
+    } catch {
+      updateRemoteDevServers([])
+    }
   }
 
   func showError(_ error: EXDevLauncherAppError) {

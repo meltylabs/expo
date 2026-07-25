@@ -8,6 +8,9 @@ import ExpoModulesCore
   public override func viewDidLoad() {
     super.viewDidLoad()
     addHostingController()
+    if viewModel.hasEmbeddedBundle {
+      viewModel.loadLocalBundle()
+    }
   }
 
 #if !os(macOS)

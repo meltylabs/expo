@@ -71,9 +71,35 @@ struct DevServersView: View {
         if viewModel.hasEmbeddedBundle {
           embeddedBundleRow
         }
+        if viewModel.conductorRemoteBuildsURL != nil {
+          conductorRemoteBuildsRow
+        }
         enterUrl
       }
     }
+  }
+
+  private var conductorRemoteBuildsRow: some View {
+    Button {
+      viewModel.showConductorRemoteBuilds()
+    } label: {
+      HStack {
+        Image(systemName: "icloud.and.arrow.down")
+          .foregroundColor(.blue)
+          .frame(width: 12)
+        Text("Remote builds")
+          .foregroundColor(.primary)
+        Spacer()
+        Image(systemName: "chevron.right")
+          .font(.caption)
+          .foregroundColor(.secondary)
+          .frame(width: 20, height: 20)
+      }
+      .padding()
+    }
+    .buttonStyle(PlainButtonStyle())
+    .background(Color.expoSecondarySystemBackground)
+    .clipShape(RoundedRectangle(cornerRadius: 12))
   }
 
   private var enterUrl: some View {
@@ -164,7 +190,7 @@ struct DevServersView: View {
         Image(systemName: "doc.fill")
           .foregroundColor(.blue)
           .frame(width: 12)
-        Text("Load embedded bundle")
+        Text("Open Conductor Dev")
           .foregroundColor(.primary)
         Spacer()
         Group {
