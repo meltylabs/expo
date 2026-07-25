@@ -135,6 +135,8 @@ struct DevServersView: View {
       return "Connected"
     case .needsAuthentication:
       return "Sign in needed"
+    case .disconnected:
+      return "Disconnected"
     case .unreachable:
       return "Not reachable"
     }
@@ -148,6 +150,8 @@ struct DevServersView: View {
       return .green
     case .needsAuthentication:
       return .orange
+    case .disconnected:
+      return .secondary
     case .unreachable:
       return .red
     }
