@@ -68,10 +68,13 @@ struct HomeTabView: View {
       DevServerInfoModal()
     }
     .sheet(isPresented: $viewModel.showingConductorRemoteBuilds) {
-      if let url = viewModel.conductorRemoteBuildsURL {
+      if let url = viewModel.conductorRemoteBuildsSheetURL {
         ConductorRemoteBuildsView(
           url: url,
           onClose: {
+            viewModel.finishConductorRemoteBuildsAuthentication()
+          },
+          onConnected: {
             viewModel.finishConductorRemoteBuildsAuthentication()
           },
           onOpenApp: { appURL in

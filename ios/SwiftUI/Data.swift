@@ -40,6 +40,13 @@ struct ConductorRemoteApp: Decodable {
   let metroPublicUrl: String?
 }
 
+enum ConductorRemoteBuildsStatus: Equatable {
+  case checking
+  case connected
+  case needsAuthentication
+  case unreachable
+}
+
 struct BuildInfo {
   let appId: String
   let runtimeVersion: String
