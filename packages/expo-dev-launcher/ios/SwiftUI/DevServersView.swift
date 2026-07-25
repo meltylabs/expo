@@ -85,10 +85,15 @@ struct DevServersView: View {
     } label: {
       HStack {
         Image(systemName: "icloud.and.arrow.down")
-          .foregroundColor(.blue)
+          .foregroundColor(conductorRemoteBuildsStatusColor)
           .frame(width: 12)
-        Text("Remote builds")
-          .foregroundColor(.primary)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Remote builds")
+            .foregroundColor(.primary)
+          Text(conductorRemoteBuildsStatusText)
+            .font(.caption)
+            .foregroundColor(conductorRemoteBuildsStatusColor)
+        }
         Spacer()
         Image(systemName: "chevron.right")
           .font(.caption)
@@ -100,6 +105,32 @@ struct DevServersView: View {
     .buttonStyle(PlainButtonStyle())
     .background(Color.expoSecondarySystemBackground)
     .clipShape(RoundedRectangle(cornerRadius: 12))
+  }
+
+  private var conductorRemoteBuildsStatusText: String {
+    switch viewModel.conductorRemoteBuildsStatus {
+    case .checking:
+      return "Checking connection"
+    case .connected:
+      return "Connected"
+    case .needsAuthentication:
+      return "Sign in needed"
+    case .unreachable:
+      return "Not reachable"
+    }
+  }
+
+  private var conductorRemoteBuildsStatusColor: Color {
+    switch viewModel.conductorRemoteBuildsStatus {
+    case .checking:
+      return .secondary
+    case .connected:
+      return .green
+    case .needsAuthentication:
+      return .orange
+    case .unreachable:
+      return .red
+    }
   }
 
   private var enterUrl: some View {

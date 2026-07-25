@@ -6,12 +6,14 @@ import WebKit
 struct ConductorRemoteBuildsView: View {
   let url: URL
   let onClose: () -> Void
+  let onConnected: () -> Void
   let onOpenApp: (String) -> Void
 
   var body: some View {
     NavigationView {
       ConductorRemoteBuildsWebView(
         url: url,
+        onConnected: onConnected,
         onOpenApp: onOpenApp
       )
       .navigationTitle("Remote builds")
@@ -29,10 +31,11 @@ struct ConductorRemoteBuildsView: View {
 
 private struct ConductorRemoteBuildsWebView: UIViewRepresentable {
   let url: URL
+  let onConnected: () -> Void
   let onOpenApp: (String) -> Void
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(url: url, onOpenApp: onOpenApp)
+    Coordinator(url: url, onConnected: onConnected, onOpenApp: onOpenApp)
   }
 
   func makeUIView(context: Context) -> WKWebView {
@@ -49,10 +52,13 @@ private struct ConductorRemoteBuildsWebView: UIViewRepresentable {
 
   final class Coordinator: NSObject, WKNavigationDelegate {
     private let url: URL
+    private let onConnected: () -> Void
     private let onOpenApp: (String) -> Void
+    private var didCompleteConnection = false
 
-    init(url: URL, onOpenApp: @escaping (String) -> Void) {
+    init(url: URL, onConnected: @escaping () -> Void, onOpenApp: @escaping (String) -> Void) {
       self.url = url
+      self.onConnected = onConnected
       self.onOpenApp = onOpenApp
     }
 
@@ -84,7 +90,19 @@ private struct ConductorRemoteBuildsWebView: UIViewRepresentable {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-      copyCookies(from: webView)
+      copyCookies(from: webView) { [weak self, weak webView] in
+        guard let self,
+              let webView,
+              self.isConnectedPage(webView.url),
+              !self.didCompleteConnection else {
+          return
+        }
+
+        self.didCompleteConnection = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [onConnected] in
+          onConnected()
+        }
+      }
     }
 
     private func appURL(from url: URL) -> String? {
@@ -95,6 +113,14 @@ private struct ConductorRemoteBuildsWebView: UIViewRepresentable {
       }
 
       return queryItems.first { $0.name == "url" }?.value
+    }
+
+    private func isConnectedPage(_ url: URL?) -> Bool {
+      guard let url else {
+        return false
+      }
+
+      return url.path == "/connected"
     }
 
     private func copyCookies(from webView: WKWebView, completion: (() -> Void)? = nil) {

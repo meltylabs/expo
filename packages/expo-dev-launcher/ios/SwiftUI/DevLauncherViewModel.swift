@@ -64,6 +64,7 @@ class DevLauncherViewModel: ObservableObject {
   @Published var isLoadingLocalBundle: Bool = false
   @Published var permissionStatus: LocalNetworkPermissionStatus = .unknown
   @Published var showingConductorRemoteBuilds = false
+  @Published var conductorRemoteBuildsStatus: ConductorRemoteBuildsStatus = .checking
 
   @Published var devServers: [DevServer] = []
 
@@ -216,8 +217,20 @@ class DevLauncherViewModel: ObservableObject {
     return indexURL
   }
 
+  var conductorRemoteBuildsAuthenticationURL: URL? {
+    conductorRemoteBuildsURL?.appendingPathComponent("connected")
+  }
+
+  var conductorRemoteBuildsSheetURL: URL? {
+    if conductorRemoteBuildsStatus == .checking || conductorRemoteBuildsStatus == .needsAuthentication {
+      return conductorRemoteBuildsAuthenticationURL
+    }
+
+    return conductorRemoteBuildsURL
+  }
+
   func showConductorRemoteBuilds() {
-    guard conductorRemoteBuildsURL != nil else {
+    guard conductorRemoteBuildsSheetURL != nil else {
       return
     }
 
@@ -509,6 +522,12 @@ class DevLauncherViewModel: ObservableObject {
 
   private func refreshRemoteDevServers() async {
     guard let url = conductorRemoteAppIndexURL() else {
+      conductorRemoteBuildsStatus = .unreachable
+      updateRemoteDevServers([])
+      return
+    }
+
+    guard await refreshConductorRemoteBuildsStatus() else {
       updateRemoteDevServers([])
       return
     }
@@ -519,8 +538,13 @@ class DevLauncherViewModel: ObservableObject {
       request.timeoutInterval = 5
 
       let (data, response) = try await URLSession.shared.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse,
-            (200..<300).contains(httpResponse.statusCode) else {
+      guard let httpResponse = response as? HTTPURLResponse else {
+        conductorRemoteBuildsStatus = .unreachable
+        updateRemoteDevServers([])
+        return
+      }
+      guard (200..<300).contains(httpResponse.statusCode) else {
+        conductorRemoteBuildsStatus = httpResponse.statusCode >= 500 ? .unreachable : .needsAuthentication
         updateRemoteDevServers([])
         return
       }
@@ -542,7 +566,40 @@ class DevLauncherViewModel: ObservableObject {
 
       updateRemoteDevServers(servers)
     } catch {
+      conductorRemoteBuildsStatus = .unreachable
       updateRemoteDevServers([])
+    }
+  }
+
+  private func refreshConductorRemoteBuildsStatus() async -> Bool {
+    guard let url = conductorRemoteBuildsAuthenticationURL else {
+      conductorRemoteBuildsStatus = .unreachable
+      return false
+    }
+
+    conductorRemoteBuildsStatus = .checking
+
+    do {
+      var request = URLRequest(url: url)
+      request.cachePolicy = .reloadIgnoringLocalCacheData
+      request.timeoutInterval = 5
+
+      let (_, response) = try await URLSession.shared.data(for: request)
+      guard let httpResponse = response as? HTTPURLResponse else {
+        conductorRemoteBuildsStatus = .unreachable
+        return false
+      }
+
+      if httpResponse.value(forHTTPHeaderField: "X-Conductor-Remote-IOS-Connected") == "1" {
+        conductorRemoteBuildsStatus = .connected
+        return true
+      }
+
+      conductorRemoteBuildsStatus = httpResponse.statusCode >= 500 ? .unreachable : .needsAuthentication
+      return false
+    } catch {
+      conductorRemoteBuildsStatus = .unreachable
+      return false
     }
   }
 
