@@ -222,7 +222,7 @@ class DevLauncherViewModel: ObservableObject {
   }
 
   var conductorRemoteBuildsSheetURL: URL? {
-    if conductorRemoteBuildsStatus == .checking || conductorRemoteBuildsStatus == .needsAuthentication {
+    if conductorRemoteBuildsStatus == .needsAuthentication {
       return conductorRemoteBuildsAuthenticationURL
     }
 
@@ -230,11 +230,16 @@ class DevLauncherViewModel: ObservableObject {
   }
 
   func showConductorRemoteBuilds() {
-    guard conductorRemoteBuildsSheetURL != nil else {
+    guard conductorRemoteBuildsStatus == .needsAuthentication,
+          conductorRemoteBuildsAuthenticationURL != nil else {
       return
     }
 
     showingConductorRemoteBuilds = true
+  }
+
+  func refreshConductorRemoteBuilds() async {
+    await refreshRemoteDevServers()
   }
 
   func finishConductorRemoteBuildsAuthentication() {
