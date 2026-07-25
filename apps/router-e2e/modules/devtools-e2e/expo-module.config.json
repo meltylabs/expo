@@ -1,8 +1,0 @@
-{
-  "platforms": ["devtools"],
-  "devtools": {
-    "webpageRoot": "public",
-    "serverEntryPoint": "server.mjs",
-    "bannerTitle": "Banner E2E"
-  }
-}
