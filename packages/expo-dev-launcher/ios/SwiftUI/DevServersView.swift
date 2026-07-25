@@ -80,31 +80,51 @@ struct DevServersView: View {
   }
 
   private var conductorRemoteBuildsRow: some View {
-    Button {
-      viewModel.showConductorRemoteBuilds()
-    } label: {
-      HStack {
-        Image(systemName: "icloud.and.arrow.down")
+    HStack {
+      Image(systemName: "icloud.and.arrow.down")
+        .foregroundColor(conductorRemoteBuildsStatusColor)
+        .frame(width: 12)
+      VStack(alignment: .leading, spacing: 2) {
+        Text("Remote builds")
+          .foregroundColor(.primary)
+        Text(conductorRemoteBuildsStatusText)
+          .font(.caption)
           .foregroundColor(conductorRemoteBuildsStatusColor)
-          .frame(width: 12)
-        VStack(alignment: .leading, spacing: 2) {
-          Text("Remote builds")
-            .foregroundColor(.primary)
-          Text(conductorRemoteBuildsStatusText)
-            .font(.caption)
-            .foregroundColor(conductorRemoteBuildsStatusColor)
+      }
+      Spacer()
+      Button {
+        Task {
+          await viewModel.refreshConductorRemoteBuilds()
         }
-        Spacer()
+      } label: {
+        Image(systemName: "arrow.clockwise")
+          .font(.caption)
+          .foregroundColor(.secondary)
+          .frame(width: 28, height: 28)
+      }
+      .disabled(viewModel.conductorRemoteBuildsStatus == .checking)
+      .buttonStyle(PlainButtonStyle())
+
+      if isConductorRemoteBuildsActionable {
         Image(systemName: "chevron.right")
           .font(.caption)
           .foregroundColor(.secondary)
           .frame(width: 20, height: 20)
       }
-      .padding()
     }
-    .buttonStyle(PlainButtonStyle())
+    .padding()
+    .contentShape(Rectangle())
+    .onTapGesture {
+      if isConductorRemoteBuildsActionable {
+        viewModel.showConductorRemoteBuilds()
+      }
+    }
     .background(Color.expoSecondarySystemBackground)
     .clipShape(RoundedRectangle(cornerRadius: 12))
+  }
+
+  private var isConductorRemoteBuildsActionable: Bool {
+    viewModel.conductorRemoteBuildsStatus == .needsAuthentication
   }
 
   private var conductorRemoteBuildsStatusText: String {
