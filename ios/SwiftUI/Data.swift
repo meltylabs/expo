@@ -44,6 +44,7 @@ enum ConductorRemoteBuildsStatus: Equatable {
   case checking
   case connected
   case needsAuthentication
+  case disconnected
   case unreachable
 }
 

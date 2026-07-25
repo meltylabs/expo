@@ -13,6 +13,8 @@ private let DEV_LAUNCHER_DEFAULT_SCHEME = "expo-dev-launcher"
 private let BONJOUR_TYPE = "_expo._tcp"
 private let networkPermissionGrantedKey = "expo.devlauncher.hasGrantedNetworkPermission"
 private let conductorRemoteAppIndexURLKey = "ConductorRemoteIOSAppIndexURL"
+private let conductorRemoteLocalProxyURLKey = "ConductorRemoteIOSLocalProxyURL"
+private let conductorRemoteBaseURLKey = "ConductorRemoteIOSRemoteBaseURL"
 
 enum LocalNetworkPermissionStatus: Equatable, Sendable {
   case unknown
@@ -73,6 +75,7 @@ class DevLauncherViewModel: ObservableObject {
   private var periodicRefreshTask: Task<Void, Never>?
   private var localDevServers: [DevServer] = []
   private var remoteDevServers: [DevServer] = []
+  private var activeConductorRemoteBuildsBaseURL: URL?
   private var pendingEmptyVerification = false
   private static let refreshInterval: UInt64 = 10_000_000_000
 
@@ -206,15 +209,7 @@ class DevLauncherViewModel: ObservableObject {
   }
 
   var conductorRemoteBuildsURL: URL? {
-    guard let indexURL = conductorRemoteAppIndexURL() else {
-      return nil
-    }
-
-    if indexURL.lastPathComponent == "apps.json" {
-      return indexURL.deletingLastPathComponent()
-    }
-
-    return indexURL
+    activeConductorRemoteBuildsBaseURL ?? conductorRemoteBaseURLCandidates().first
   }
 
   var conductorRemoteBuildsAuthenticationURL: URL? {
@@ -525,17 +520,52 @@ class DevLauncherViewModel: ObservableObject {
     return URL(string: value)
   }
 
+  private func conductorRemoteLocalProxyURL() -> URL? {
+    guard let value = Bundle.main.object(forInfoDictionaryKey: conductorRemoteLocalProxyURLKey) as? String,
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+
+    return URL(string: value)
+  }
+
+  private func conductorRemoteConfiguredBaseURL() -> URL? {
+    guard let value = Bundle.main.object(forInfoDictionaryKey: conductorRemoteBaseURLKey) as? String,
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+
+    return URL(string: value)
+  }
+
+  private func conductorRemoteBaseURLCandidates() -> [URL] {
+    var candidates: [URL] = []
+    for candidate in [
+      conductorRemoteLocalProxyURL(),
+      conductorRemoteConfiguredBaseURL(),
+      conductorRemoteAppIndexURL().map { appIndexURL in
+        appIndexURL.lastPathComponent == "apps.json" ? appIndexURL.deletingLastPathComponent() : appIndexURL
+      }
+    ] {
+      guard let candidate else {
+        continue
+      }
+      if !candidates.contains(where: { $0.absoluteString == candidate.absoluteString }) {
+        candidates.append(candidate)
+      }
+    }
+
+    return candidates
+  }
+
   private func refreshRemoteDevServers() async {
-    guard let url = conductorRemoteAppIndexURL() else {
-      conductorRemoteBuildsStatus = .unreachable
+    guard await refreshConductorRemoteBuildsStatus(),
+          let baseURL = activeConductorRemoteBuildsBaseURL else {
       updateRemoteDevServers([])
       return
     }
 
-    guard await refreshConductorRemoteBuildsStatus() else {
-      updateRemoteDevServers([])
-      return
-    }
+    let url = baseURL.appendingPathComponent("apps.json")
 
     do {
       var request = URLRequest(url: url)
@@ -577,35 +607,59 @@ class DevLauncherViewModel: ObservableObject {
   }
 
   private func refreshConductorRemoteBuildsStatus() async -> Bool {
-    guard let url = conductorRemoteBuildsAuthenticationURL else {
-      conductorRemoteBuildsStatus = .unreachable
+    let candidates = conductorRemoteBaseURLCandidates()
+    guard !candidates.isEmpty else {
+      conductorRemoteBuildsStatus = .disconnected
+      activeConductorRemoteBuildsBaseURL = nil
       return false
     }
 
     conductorRemoteBuildsStatus = .checking
+    activeConductorRemoteBuildsBaseURL = nil
 
-    do {
-      var request = URLRequest(url: url)
+    var sawAuthenticationResponse = false
+    var sawServerError = false
+
+    for baseURL in candidates {
+      var request = URLRequest(url: baseURL.appendingPathComponent("health"))
       request.cachePolicy = .reloadIgnoringLocalCacheData
-      request.timeoutInterval = 5
+      request.timeoutInterval = 2
 
-      let (_, response) = try await URLSession.shared.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse else {
-        conductorRemoteBuildsStatus = .unreachable
-        return false
+      do {
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+          continue
+        }
+
+        if httpResponse.value(forHTTPHeaderField: "X-Conductor-Remote-IOS-Landing") == "1",
+           (200..<300).contains(httpResponse.statusCode) {
+          activeConductorRemoteBuildsBaseURL = baseURL
+          conductorRemoteBuildsStatus = .connected
+          return true
+        }
+
+        if httpResponse.statusCode >= 500 {
+          sawServerError = true
+        } else {
+          sawAuthenticationResponse = true
+          if activeConductorRemoteBuildsBaseURL == nil {
+            activeConductorRemoteBuildsBaseURL = baseURL
+          }
+        }
+      } catch {
+        continue
       }
-
-      if httpResponse.value(forHTTPHeaderField: "X-Conductor-Remote-IOS-Connected") == "1" {
-        conductorRemoteBuildsStatus = .connected
-        return true
-      }
-
-      conductorRemoteBuildsStatus = httpResponse.statusCode >= 500 ? .unreachable : .needsAuthentication
-      return false
-    } catch {
-      conductorRemoteBuildsStatus = .unreachable
-      return false
     }
+
+    if sawServerError {
+      conductorRemoteBuildsStatus = .unreachable
+    } else if sawAuthenticationResponse {
+      conductorRemoteBuildsStatus = .needsAuthentication
+    } else {
+      conductorRemoteBuildsStatus = .disconnected
+      activeConductorRemoteBuildsBaseURL = nil
+    }
+    return false
   }
 
   func showError(_ error: EXDevLauncherAppError) {
