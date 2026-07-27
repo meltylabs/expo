@@ -593,7 +593,7 @@ class DevLauncherViewModel: ObservableObject {
         }
 
         return DevServer(
-          url: publicUrl,
+          url: conductorRemoteDevServerURL(publicUrl, through: baseURL),
           description: app.workspaceName,
           source: "conductor-remote"
         )
@@ -604,6 +604,34 @@ class DevLauncherViewModel: ObservableObject {
       conductorRemoteBuildsStatus = .unreachable
       updateRemoteDevServers([])
     }
+  }
+
+  private func conductorRemoteDevServerURL(_ publicUrl: String, through baseURL: URL) -> String {
+    guard conductorRemoteUsesLocalProxy(baseURL),
+          let localProxyURL = conductorRemoteLocalProxyURL(),
+          var remoteComponents = URLComponents(string: publicUrl),
+          let proxyComponents = URLComponents(url: localProxyURL, resolvingAgainstBaseURL: false),
+          let proxyScheme = proxyComponents.scheme,
+          let proxyHost = proxyComponents.host else {
+      return publicUrl
+    }
+
+    remoteComponents.scheme = proxyScheme
+    remoteComponents.host = proxyHost
+    remoteComponents.port = proxyComponents.port
+    remoteComponents.user = nil
+    remoteComponents.password = nil
+    return remoteComponents.url?.absoluteString ?? publicUrl
+  }
+
+  private func conductorRemoteUsesLocalProxy(_ baseURL: URL) -> Bool {
+    guard let localProxyURL = conductorRemoteLocalProxyURL() else {
+      return false
+    }
+
+    return baseURL.scheme == localProxyURL.scheme &&
+      baseURL.host == localProxyURL.host &&
+      baseURL.port == localProxyURL.port
   }
 
   private func refreshConductorRemoteBuildsStatus() async -> Bool {
