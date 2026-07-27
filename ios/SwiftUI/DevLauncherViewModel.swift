@@ -521,12 +521,12 @@ class DevLauncherViewModel: ObservableObject {
   }
 
   private func conductorRemoteLocalProxyURL() -> URL? {
-    guard let value = Bundle.main.object(forInfoDictionaryKey: conductorRemoteLocalProxyURLKey) as? String,
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      return nil
+    if let value = Bundle.main.object(forInfoDictionaryKey: conductorRemoteLocalProxyURLKey) as? String,
+       !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return URL(string: value)
     }
 
-    return URL(string: value)
+    return URL(string: "http://127.0.0.1:49321")
   }
 
   private func conductorRemoteConfiguredBaseURL() -> URL? {
